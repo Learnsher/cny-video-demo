@@ -2,13 +2,13 @@ import streamlit as st
 import replicate
 import os
 import requests
-import PIL.Image  # 必須引入
+import PIL.Image
 
-# --- 1. 系統補丁 (修正 PIL 和 MoviePy 的兼容性問題) ---
+# --- 1. 系統補丁 ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip
+from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, CompositeVideoClip, ColorClip
 from moviepy.audio.fx.all import audio_loop 
 import tempfile
 
@@ -29,18 +29,24 @@ MODEL_VIDEO_GEN = "google/veo-3.1-fast"
 # --- 核心功能函數 ---
 
 def download_file(url, local_filename):
-    """下載檔案"""
+    """下載檔案 (增加狀態碼檢查)"""
     try:
+        print(f"DEBUG: Downloading from {url}")
         r = requests.get(url, timeout=60)
-        with open(local_filename, 'wb') as f:
-            f.write(r.content)
-        return local_filename
+        if r.status_code == 200:
+            with open(local_filename, 'wb') as f:
+                f.write(r.content)
+            print(f"DEBUG: Downloaded to {local_filename}, Size: {os.path.getsize(local_filename)} bytes")
+            return local_filename
+        else:
+            st.error(f"下載失敗，伺服器回應錯誤碼: {r.status_code}")
+            return None
     except Exception as e:
-        st.error(f"下載失敗: {e}")
+        st.error(f"下載過程發生錯誤: {e}")
         return None
 
 def generate_cny_image_strict(uploaded_file, prompt):
-    """步驟 2: Nano Banana Pro (Strict Mode)"""
+    """步驟 2: Nano Banana Pro"""
     uploaded_file.seek(0)
     final_prompt = f"{prompt}, festive chinese new year atmosphere, cinematic lighting, photorealistic, 8k"
     
@@ -48,7 +54,7 @@ def generate_cny_image_strict(uploaded_file, prompt):
 
     input_args = {
         "prompt": final_prompt,
-        "image_input": [uploaded_file],  # 必須是 List
+        "image_input": [uploaded_file], 
         "resolution": "2K",
         "aspect_ratio": "9:16",
         "output_format": "png",
@@ -65,14 +71,13 @@ def generate_cny_image_strict(uploaded_file, prompt):
         return str(output)
 
 def animate_with_veo_fast(image_url):
-    """步驟 4: Veo 3.1 Fast"""
+    """步驟 4: Veo 3.1 Fast (Duration=4)"""
     print(f"DEBUG: Calling {MODEL_VIDEO_GEN}")
     
-    # 【關鍵修正】Duration 必須是 4, 6, 或 8
     input_args = {
         "image": image_url,
         "prompt": "Slow cinematic camera pan, festive atmosphere, glowing lights, 4k resolution, smooth motion",
-        "duration": 4,          # 改為 4 (因為 API 不接受 3)
+        "duration": 4,
         "resolution": "720p",
         "aspect_ratio": "9:16",
         "generate_audio": False 
@@ -81,38 +86,59 @@ def animate_with_veo_fast(image_url):
     output = replicate.run(MODEL_VIDEO_GEN, input=input_args)
     return str(output)
 
-def process_final_composite(veo_video_path):
-    """步驟 4後製: 合成 Intro + Veo + Outro + BGM"""
+# 【關鍵修改：全新的安全縮放函數】
+def resize_with_padding(clip, target_resolution=(1080, 1920)):
+    """
+    將影片調整到目標尺寸，保持原始比例，不足部分填充黑邊 (避免裁切)。
+    """
+    target_w, target_h = target_resolution
     
+    # 1. 先將影片 resize 到能放入目標框內的最大尺寸 (保持比例)
+    resized_clip = clip.resize(height=target_h)
+    if resized_clip.w > target_w:
+         resized_clip = resized_clip.resize(width=target_w)
+
+    # 2. 創建一個純黑色的背景畫布
+    background = ColorClip(size=target_resolution, color=(0, 0, 0), duration=clip.duration)
+    
+    # 3. 將 resize 後的影片置中放在黑色畫布上
+    final_composite = CompositeVideoClip([background, resized_clip.set_position("center")])
+    
+    return final_composite
+
+
+def process_final_composite(veo_video_path):
+    """步驟 4後製: 合成 Intro + Veo + Outro + BGM (修復版)"""
+    
+    # 1. 檢查素材是否存在
     if not os.path.exists("intro.mp4") or not os.path.exists("outro.mp4"):
         st.error("⚠️ 找不到素材！請確認 intro.mp4 和 outro.mp4 已上傳至 GitHub 根目錄。")
         return None
 
+    # 2. 【關鍵修正】檢查 VEO 影片是否有效 (解決黑屏問題)
+    if not os.path.exists(veo_video_path) or os.path.getsize(veo_video_path) < 1000:
+         st.error("❌ 嚴重錯誤：Veo 影片下載失敗或檔案損毀 (檔案過小)，無法進行合成。請重試。")
+         return None
+         
     try:
-        clip_intro = VideoFileClip("intro.mp4")
-        clip_veo = VideoFileClip(veo_video_path)
-        clip_outro = VideoFileClip("outro.mp4")
+        st.info("正在載入影片片段並進行標準化處理 (9:16)...")
+        clip_intro_raw = VideoFileClip("intro.mp4")
+        clip_veo_raw = VideoFileClip(veo_video_path)
+        clip_outro_raw = VideoFileClip("outro.mp4")
         
-        # 統一尺寸 (9:16 - 1080x1920)
+        # 3. 【關鍵修正】使用新的黑邊填充函數，確保不裁切
         target_res = (1080, 1920)
-        
-        def safe_resize(clip):
-            return clip.resize(height=target_res[1]).crop(x_center=clip.w/2, width=target_res[0])
+        clip_intro = resize_with_padding(clip_intro_raw, target_res)
+        clip_veo = resize_with_padding(clip_veo_raw, target_res)
+        clip_outro = resize_with_padding(clip_outro_raw, target_res)
 
-        try:
-            clip_intro = safe_resize(clip_intro)
-            clip_veo = safe_resize(clip_veo)
-            clip_outro = safe_resize(clip_outro)
-        except Exception:
-            clip_intro = clip_intro.resize(newsize=target_res)
-            clip_veo = clip_veo.resize(newsize=target_res)
-            clip_outro = clip_outro.resize(newsize=target_res)
-
-        # 拼接影片
+        # 4. 拼接影片 (使用 compose 模式確保尺寸一致)
+        st.info("正在拼接影片...")
         final_clip = concatenate_videoclips([clip_intro, clip_veo, clip_outro], method="compose")
         
-        # 處理音樂
+        # 5. 處理音樂
         if os.path.exists("bgm.mp3"):
+            st.info("正在加入背景音樂...")
             bgm = AudioFileClip("bgm.mp3")
             
             if bgm.duration < final_clip.duration:
@@ -123,31 +149,38 @@ def process_final_composite(veo_video_path):
             bgm = bgm.volumex(0.6)
             final_clip = final_clip.set_audio(bgm)
             
-        # 輸出
+        # 6. 輸出
+        st.info("正在渲染最終檔案 (這需要一點時間)...")
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+        
+        # 增加 verbose=False 減少 log，使用 slow preset 提高相容性
         final_clip.write_videofile(
             tfile.name, 
             codec="libx264", 
             audio_codec="aac", 
             fps=24,
-            preset="medium",
+            preset="slow", 
+            verbose=False,
             logger=None
         )
         
-        clip_intro.close()
-        clip_veo.close()
-        clip_outro.close()
+        # 釋放資源
+        clip_intro_raw.close()
+        clip_veo_raw.close()
+        clip_outro_raw.close()
         if os.path.exists("bgm.mp3"): bgm.close()
         
         return tfile.name
 
     except Exception as e:
-        st.error(f"合成過程發生錯誤: {e}")
+        st.error(f"合成過程嚴重錯誤: {e}")
+        import traceback
+        st.text(traceback.format_exc()) # 印出詳細錯誤以便除錯
         return None
 
 # --- UI 前端介面 ---
 
-st.title("🧧 CNY 活動祝賀視頻系統")
+st.title("🧧 CNY 活動祝賀視頻系統 (v3.2 Fix)")
 st.markdown("流程：上傳照片 -> 生成賀圖 -> 確認 -> 生成影片")
 
 uploaded_file = st.file_uploader("1. 上傳您的照片 (不限比例)", type=['jpg', 'png', 'jpeg', 'webp'])
@@ -192,12 +225,13 @@ if 'generated_img_url' in st.session_state:
             with progress_box.container():
                 st.info("正在啟動 Google Veo 3.1 Fast (需時約 1-3 分鐘)...")
                 veo_url = animate_with_veo_fast(st.session_state['generated_img_url'])
+                st.info("Veo 生成完成，正在下載影片...")
                 local_veo = download_file(veo_url, "temp_veo.mp4")
             
             if local_veo:
                 # B. 合成
                 with progress_box.container():
-                    st.info("動畫完成！正在進行最終合成...")
+                    st.info("下載完成，開始進行最終合成...")
                     final_path = process_final_composite(local_veo)
                 
                 if final_path:

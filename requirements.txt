@@ -2,3 +2,4 @@ streamlit
 replicate
 moviepy==1.0.3
 requests
+python-dotenv

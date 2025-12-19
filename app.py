@@ -15,8 +15,8 @@ else:
     st.error("❌ 錯誤：未檢測到 API Token。請在 Streamlit Secrets 中設定 REPLICATE_API_TOKEN。")
     st.stop()
 
-# --- 模型設定 (根據你的指定) ---
-# 注意：請確保你的 Replicate 帳號有權限存取這兩個模型
+# --- 模型設定 ---
+# 根據你提供的資料，確認使用 google/nano-banana-pro
 MODEL_IMG_GEN = "google/nano-banana-pro" 
 MODEL_VIDEO_GEN = "google/veo-3.1-fast"
 
@@ -33,26 +33,29 @@ def download_file(url, local_filename):
         st.error(f"下載失敗: {e}")
         return None
 
-def generate_cny_image_safe(uploaded_file, prompt):
-    """步驟 2: 圖生圖 (修正版：透過 Prompt 控制比例，避免 API 報錯)"""
+def generate_cny_image_strict(uploaded_file, prompt):
+    """步驟 2: 使用 Nano Banana Pro (嚴格按照提供的 API Schema)"""
     
     # 確保檔案指針在開頭
     uploaded_file.seek(0)
     
-    # 【關鍵修正】將 9:16 寫入 Prompt，而不是作為參數傳送
-    final_prompt = f"{prompt}, 9:16 ratio, vertical composition, high quality"
+    # CNY 提示詞優化
+    final_prompt = f"{prompt}, festive chinese new year atmosphere, cinematic lighting, photorealistic, 8k"
     
     print(f"DEBUG: Using Model: {MODEL_IMG_GEN}")
-    print(f"DEBUG: Prompt: {final_prompt}")
-
-    # 設定參數 (移除 aspect_ratio 以防斷線)
-    # 如果你的模型輸入欄位叫 'input_image'，請將下方的 'image' 改為 'input_image'
+    
+    # 【關鍵修正】根據你提供的 Example
+    # 1. 參數名改為 "image_input"
+    # 2. 數值必須是 List [uploaded_file]，Streamlit 的文件物件可以直接放在 list 裡傳給 Replicate
+    # 3. 加入 resolution 和 aspect_ratio
+    
     input_args = {
-        "image": uploaded_file,
         "prompt": final_prompt,
-        "prompt_strength": 0.65,  # 0.65 代表 65% 聽從 Prompt，35% 保留原圖特徵
-        "num_inference_steps": 25,
-        "guidance_scale": 7.5
+        "image_input": [uploaded_file],  # 必須是 List！
+        "resolution": "2K",              # 根據 Example 設定
+        "aspect_ratio": "9:16",          # 我們需要豎屏
+        "output_format": "png",
+        "safety_filter_level": "block_only_high"
     }
     
     output = replicate.run(
@@ -60,8 +63,11 @@ def generate_cny_image_safe(uploaded_file, prompt):
         input=input_args
     )
     
-    # 格式處理：強制轉字串
-    if isinstance(output, list):
+    # 處理回傳格式
+    # 根據 Python Example，Output 可能是一個物件，我們需要它的 URL
+    if hasattr(output, 'url'):
+        return output.url
+    elif isinstance(output, list):
         return str(output[0])
     else:
         return str(output)
@@ -95,16 +101,21 @@ def process_final_composite(veo_video_path):
         clip_outro = VideoFileClip("outro.mp4")
         
         # 2. 強制統一尺寸 (9:16 - 1080x1920)
-        # 這是為了防止不同來源影片尺寸不合導致合成失敗
         target_res = (1080, 1920)
         
         def safe_resize(clip):
-            # 先調整高度，再裁切寬度，確保填滿畫面
+            # 先調整高度，再裁切寬度，確保填滿畫面 (Object-fit: cover)
             return clip.resize(height=target_res[1]).crop(x_center=clip.w/2, width=target_res[0])
 
-        clip_intro = safe_resize(clip_intro)
-        clip_veo = safe_resize(clip_veo)
-        clip_outro = safe_resize(clip_outro)
+        try:
+            clip_intro = safe_resize(clip_intro)
+            clip_veo = safe_resize(clip_veo)
+            clip_outro = safe_resize(clip_outro)
+        except Exception as e:
+            # Fallback
+            clip_intro = clip_intro.resize(newsize=target_res)
+            clip_veo = clip_veo.resize(newsize=target_res)
+            clip_outro = clip_outro.resize(newsize=target_res)
 
         # 3. 拼接
         final_clip = concatenate_videoclips([clip_intro, clip_veo, clip_outro], method="compose")
@@ -112,17 +123,20 @@ def process_final_composite(veo_video_path):
         # 4. 加入音樂
         if os.path.exists("bgm.mp3"):
             bgm = AudioFileClip("bgm.mp3")
-            # 讓音樂循環或裁切以配合影片長度
             if bgm.duration < final_clip.duration:
                 bgm = bgm.loop(duration=final_clip.duration)
             else:
                 bgm = bgm.subclip(0, final_clip.duration)
             
-            # 設定音量
             bgm = bgm.volumex(0.6)
-            final_clip = final_clip.set_audio(bgm)
+            # 如果影片有聲音則混合，沒有則直接用 BGM
+            if final_clip.audio:
+                final_audio = CompositeAudioClip([final_clip.audio, bgm])
+            else:
+                final_audio = bgm
+            final_clip = final_clip.set_audio(final_audio)
             
-        # 5. 輸出 (使用 tempfile 避免權限問題)
+        # 5. 輸出
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
         final_clip.write_videofile(
             tfile.name, 
@@ -130,14 +144,13 @@ def process_final_composite(veo_video_path):
             audio_codec="aac", 
             fps=24,
             preset="medium",
-            threads=4,
-            logger=None # 隱藏過多 log
+            logger=None
         )
         
-        # 關閉資源
         clip_intro.close()
         clip_veo.close()
         clip_outro.close()
+        if os.path.exists("bgm.mp3"): bgm.close()
         
         return tfile.name
 
@@ -151,20 +164,21 @@ st.title("🧧 CNY 活動祝賀視頻系統")
 st.markdown("流程：上傳照片 -> 生成賀圖 -> 確認 -> 生成影片")
 
 # Step 1: Upload
-uploaded_file = st.file_uploader("1. 上傳您的照片 (不限比例)", type=['jpg', 'png', 'jpeg'])
+uploaded_file = st.file_uploader("1. 上傳您的照片 (不限比例)", type=['jpg', 'png', 'jpeg', 'webp'])
 
 if uploaded_file:
     st.image(uploaded_file, caption="原始照片", width=200)
     
     # 預設提示詞
-    default_prompt = "A festive Chinese New Year portrait, traditional elegant red and gold clothing, joyful expression, holding a red envelope, background filled with glowing red lanterns, golden bokeh, cinematic lighting"
+    default_prompt = "A festive Chinese New Year portrait, traditional elegant red and gold clothing, joyful expression, holding a red envelope"
     user_prompt = st.text_area("提示詞 (Prompt)", default_prompt, height=100)
 
     # Step 2: Generate Image
     if st.button("2. 生成賀圖預覽 (Nano Banana Pro)"):
         with st.spinner("正在生成圖片，請稍候..."):
             try:
-                img_url = generate_cny_image_safe(uploaded_file, user_prompt)
+                # 呼叫修正後的函數
+                img_url = generate_cny_image_strict(uploaded_file, user_prompt)
                 st.session_state['generated_img_url'] = img_url
                 st.success("圖片生成成功！請在下方確認。")
             except Exception as e:
@@ -219,7 +233,6 @@ if 'generated_img_url' in st.session_state:
                             mime="video/mp4"
                         )
                     
-                    # 清理暫存
                     os.remove(local_veo)
                     
         except Exception as e:

@@ -3,6 +3,8 @@ import replicate
 import os
 import requests
 import PIL.Image
+import time
+import random
 
 # --- 1. 系統補丁 ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
@@ -12,46 +14,138 @@ from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips,
 from moviepy.audio.fx.all import audio_loop 
 import tempfile
 
-# --- 頁面設定 ---
-st.set_page_config(page_title="CNY Video Gen Ultimate", page_icon="🧧")
+# --- 頁面設定 (必須在最上) ---
+st.set_page_config(page_title="LUNAR 2025 | Bespoke AI", page_icon="🐍", layout="centered")
+
+# --- CSS: High Fashion Style Injection ---
+st.markdown("""
+<style>
+    /* 全局字體與背景 */
+    .stApp {
+        background-color: #FAFAFA; /* 極淺灰，比純白更有質感 */
+        font-family: 'Helvetica Neue', Helvetica, Arial, serif;
+    }
+    
+    /* 隱藏 Streamlit 預設元素 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* 標題樣式 */
+    .brand-title {
+        font-family: 'Times New Roman', serif;
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #1A1A1A;
+        text-align: center;
+        letter-spacing: 2px;
+        margin-top: 2rem;
+        margin-bottom: 0.5rem;
+    }
+    .brand-subtitle {
+        font-family: 'Helvetica Neue', sans-serif;
+        font-size: 0.9rem;
+        color: #888;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        margin-bottom: 3rem;
+    }
+
+    /* 按鈕高級化 (黑底白字+金邊) */
+    .stButton > button {
+        width: 100%;
+        background-color: #1A1A1A;
+        color: #FFFFFF;
+        border: 1px solid #C5A059; /* 香檳金 */
+        border-radius: 0px; /* 直角設計，更時尚 */
+        padding: 12px 24px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 14px;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        background-color: #C5A059;
+        color: #1A1A1A;
+        border-color: #1A1A1A;
+    }
+    
+    /* Secondary Button (重試) */
+    .secondary-btn > button {
+        background-color: transparent;
+        color: #1A1A1A;
+        border: 1px solid #CCCCCC;
+    }
+    
+    /* 卡片容器 */
+    .card-container {
+        background: white;
+        padding: 2rem;
+        border: 1px solid #EAEAEA;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
+    /* Loading Carousel Text */
+    .carousel-title {
+        font-family: 'Times New Roman', serif;
+        font-size: 1.2rem;
+        color: #C5A059;
+        margin-bottom: 0.5rem;
+    }
+    .carousel-text {
+        font-size: 0.9rem;
+        color: #555;
+        line-height: 1.5;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- SVG Icons (Line Art) ---
+ICON_UPLOAD = """<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="1" stroke-linecap="square"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>"""
+ICON_CHECK = """<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#C5A059" stroke-width="1" stroke-linecap="square"><polyline points="20 6 9 17 4 12"></polyline></svg>"""
+ICON_VIDEO = """<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1A1A1A" stroke-width="1" stroke-linecap="square"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>"""
 
 # --- 2. 安全驗證 ---
 if 'REPLICATE_API_TOKEN' in st.secrets:
     os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
 else:
-    st.error("❌ 錯誤：未檢測到 API Token。請在 Streamlit Secrets 中設定 REPLICATE_API_TOKEN。")
+    st.error("SYSTEM ERROR: API Token Missing.")
     st.stop()
+
+# --- 初始化 Session State ---
+if 'step' not in st.session_state:
+    st.session_state['step'] = 1
+if 'generated_img_url' not in st.session_state:
+    st.session_state['generated_img_url'] = None
+if 'final_video_path' not in st.session_state:
+    st.session_state['final_video_path'] = None
 
 # --- 模型設定 ---
 MODEL_IMG_GEN = "google/nano-banana-pro" 
 MODEL_VIDEO_GEN = "google/veo-3.1-fast"
 
-# --- 核心功能函數 ---
+# --- 核心功能函數 (保持 v3.2 的穩健邏輯) ---
 
 def download_file(url, local_filename):
-    """下載檔案 (增加狀態碼檢查)"""
     try:
-        print(f"DEBUG: Downloading from {url}")
         r = requests.get(url, timeout=60)
         if r.status_code == 200:
             with open(local_filename, 'wb') as f:
                 f.write(r.content)
-            print(f"DEBUG: Downloaded to {local_filename}, Size: {os.path.getsize(local_filename)} bytes")
             return local_filename
-        else:
-            st.error(f"下載失敗，伺服器回應錯誤碼: {r.status_code}")
-            return None
-    except Exception as e:
-        st.error(f"下載過程發生錯誤: {e}")
+        return None
+    except:
         return None
 
-def generate_cny_image_strict(uploaded_file, prompt):
-    """步驟 2: Nano Banana Pro"""
+def generate_cny_image_strict(uploaded_file):
+    """Step 2: Generate (Prompt Hidden)"""
     uploaded_file.seek(0)
-    final_prompt = f"{prompt}, festive chinese new year atmosphere, cinematic lighting, photorealistic, 8k"
+    # 客戶指定的 Prompt
+    final_prompt = "a CNY greeting photo of this woman, in 9:16 ratio, do not include any text / 中文字 in the image."
     
-    print(f"DEBUG: Calling {MODEL_IMG_GEN}")
-
     input_args = {
         "prompt": final_prompt,
         "image_input": [uploaded_file], 
@@ -71,9 +165,7 @@ def generate_cny_image_strict(uploaded_file, prompt):
         return str(output)
 
 def animate_with_veo_fast(image_url):
-    """步驟 4: Veo 3.1 Fast (Duration=4)"""
-    print(f"DEBUG: Calling {MODEL_VIDEO_GEN}")
-    
+    """Step 3: Veo Animation"""
     input_args = {
         "image": image_url,
         "prompt": "Slow cinematic camera pan, festive atmosphere, glowing lights, 4k resolution, smooth motion",
@@ -82,78 +174,48 @@ def animate_with_veo_fast(image_url):
         "aspect_ratio": "9:16",
         "generate_audio": False 
     }
-    
     output = replicate.run(MODEL_VIDEO_GEN, input=input_args)
     return str(output)
 
-# 【關鍵修改：全新的安全縮放函數】
 def resize_with_padding(clip, target_resolution=(1080, 1920)):
-    """
-    將影片調整到目標尺寸，保持原始比例，不足部分填充黑邊 (避免裁切)。
-    """
     target_w, target_h = target_resolution
-    
-    # 1. 先將影片 resize 到能放入目標框內的最大尺寸 (保持比例)
     resized_clip = clip.resize(height=target_h)
     if resized_clip.w > target_w:
          resized_clip = resized_clip.resize(width=target_w)
-
-    # 2. 創建一個純黑色的背景畫布
     background = ColorClip(size=target_resolution, color=(0, 0, 0), duration=clip.duration)
-    
-    # 3. 將 resize 後的影片置中放在黑色畫布上
     final_composite = CompositeVideoClip([background, resized_clip.set_position("center")])
-    
     return final_composite
 
-
 def process_final_composite(veo_video_path):
-    """步驟 4後製: 合成 Intro + Veo + Outro + BGM (修復版)"""
-    
-    # 1. 檢查素材是否存在
     if not os.path.exists("intro.mp4") or not os.path.exists("outro.mp4"):
-        st.error("⚠️ 找不到素材！請確認 intro.mp4 和 outro.mp4 已上傳至 GitHub 根目錄。")
         return None
 
-    # 2. 【關鍵修正】檢查 VEO 影片是否有效 (解決黑屏問題)
     if not os.path.exists(veo_video_path) or os.path.getsize(veo_video_path) < 1000:
-         st.error("❌ 嚴重錯誤：Veo 影片下載失敗或檔案損毀 (檔案過小)，無法進行合成。請重試。")
          return None
          
     try:
-        st.info("正在載入影片片段並進行標準化處理 (9:16)...")
         clip_intro_raw = VideoFileClip("intro.mp4")
         clip_veo_raw = VideoFileClip(veo_video_path)
         clip_outro_raw = VideoFileClip("outro.mp4")
         
-        # 3. 【關鍵修正】使用新的黑邊填充函數，確保不裁切
         target_res = (1080, 1920)
         clip_intro = resize_with_padding(clip_intro_raw, target_res)
         clip_veo = resize_with_padding(clip_veo_raw, target_res)
         clip_outro = resize_with_padding(clip_outro_raw, target_res)
 
-        # 4. 拼接影片 (使用 compose 模式確保尺寸一致)
-        st.info("正在拼接影片...")
         final_clip = concatenate_videoclips([clip_intro, clip_veo, clip_outro], method="compose")
         
-        # 5. 處理音樂
         if os.path.exists("bgm.mp3"):
-            st.info("正在加入背景音樂...")
             bgm = AudioFileClip("bgm.mp3")
-            
             if bgm.duration < final_clip.duration:
                 bgm = audio_loop(bgm, duration=final_clip.duration)
             else:
                 bgm = bgm.subclip(0, final_clip.duration)
-            
             bgm = bgm.volumex(0.6)
             final_clip = final_clip.set_audio(bgm)
             
-        # 6. 輸出
-        st.info("正在渲染最終檔案 (這需要一點時間)...")
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
         
-        # 增加 verbose=False 減少 log，使用 slow preset 提高相容性
         final_clip.write_videofile(
             tfile.name, 
             codec="libx264", 
@@ -164,7 +226,6 @@ def process_final_composite(veo_video_path):
             logger=None
         )
         
-        # 釋放資源
         clip_intro_raw.close()
         clip_veo_raw.close()
         clip_outro_raw.close()
@@ -172,81 +233,196 @@ def process_final_composite(veo_video_path):
         
         return tfile.name
 
-    except Exception as e:
-        st.error(f"合成過程嚴重錯誤: {e}")
-        import traceback
-        st.text(traceback.format_exc()) # 印出詳細錯誤以便除錯
+    except Exception:
         return None
 
-# --- UI 前端介面 ---
+# --- UI Components ---
 
-st.title("🧧 CNY 活動祝賀視頻系統 (v3.2 Fix)")
-st.markdown("流程：上傳照片 -> 生成賀圖 -> 確認 -> 生成影片")
+def render_header():
+    st.markdown(f"""
+    <div class="brand-title">LUNAR 2025</div>
+    <div class="brand-subtitle">The Bespoke AI Experience</div>
+    """, unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("1. 上傳您的照片 (不限比例)", type=['jpg', 'png', 'jpeg', 'webp'])
-
-if uploaded_file:
-    st.image(uploaded_file, caption="原始照片", width=200)
+def render_trivia_card():
+    """High Fashion Trivia Carousel"""
+    # 這是高級知識庫
+    trivia_db = [
+        {"title": "The Vermilion Aesthetic", "desc": "In Eastern art history, Red (Vermilion) represents not just luck, but the life force that connects generations."},
+        {"title": "The Peony Symbolism", "desc": "Known as the 'King of Flowers', the Peony embodies prosperity, honor, and elegance in traditional textile design."},
+        {"title": "The Infinite Knot", "desc": "The Mystic Knot (Pan Chang) has no beginning or end, symbolizing the Buddhist concept of eternal continuity."},
+        {"title": "The Gold Standard", "desc": "Gold accents in Lunar attire mirror the imperial history, signifying spiritual enlightenment and wealth."},
+    ]
+    card = random.choice(trivia_db)
     
-    default_prompt = "A festive Chinese New Year portrait, traditional elegant red and gold clothing, joyful expression, holding a red envelope"
-    user_prompt = st.text_area("提示詞 (Prompt)", default_prompt, height=100)
+    st.markdown(f"""
+    <div class="card-container">
+        <div style="margin-bottom:10px;">⏳</div>
+        <div class="carousel-title">{card['title']}</div>
+        <div class="carousel-text">{card['desc']}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Step 2
-    if st.button("2. 生成賀圖預覽 (Nano Banana Pro)"):
-        with st.spinner("正在生成圖片..."):
-            try:
-                img_url = generate_cny_image_strict(uploaded_file, user_prompt)
-                st.session_state['generated_img_url'] = img_url
-                st.success("圖片生成成功！")
-            except Exception as e:
-                st.error(f"生成圖片失敗: {e}")
+# --- Main App Logic (SPA) ---
 
-# Step 3
-if 'generated_img_url' in st.session_state:
-    st.markdown("---")
-    st.subheader("3. 請確認生成結果")
-    st.image(st.session_state['generated_img_url'], caption="AI 預覽圖 (9:16)", width=300)
+render_header()
+
+# ================= SCREEN 1: UPLOAD =================
+if st.session_state['step'] == 1:
     
-    col1, col2 = st.columns([1, 1])
+    st.markdown(f"""
+    <div style="text-align:center; margin-bottom: 2rem;">
+        {ICON_UPLOAD}
+        <p style="margin-top:10px; color:#555;">UPLOAD PORTRAIT</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    uploaded_file = st.file_uploader("", type=['jpg', 'png', 'jpeg', 'webp'], label_visibility="collapsed")
+    
+    st.markdown("""
+    <div style="font-size: 0.8rem; color: #999; text-align: center; margin-top: 1rem;">
+        RECOMMENDATION<br>
+        High resolution • Clear lighting • Front facing<br>
+        Avoid: Sunglasses • Masks • Group photos
+    </div>
+    """, unsafe_allow_html=True)
+
+    if uploaded_file:
+        if st.button("GENERATE PORTRAIT"):
+            with st.spinner("Analyzing aesthetics..."):
+                try:
+                    img_url = generate_cny_image_strict(uploaded_file)
+                    st.session_state['generated_img_url'] = img_url
+                    st.session_state['step'] = 2
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+# ================= SCREEN 2: REVIEW =================
+elif st.session_state['step'] == 2:
+    
+    st.markdown(f"""
+    <div style="text-align:center; margin-bottom: 1rem;">
+        {ICON_CHECK}
+        <p style="margin-top:10px; color:#C5A059;">REVIEW PORTRAIT</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 顯示生成的圖片 (Card Style)
+    col_img, _ = st.columns([3, 0.1]) # Center hack
+    with col_img:
+        st.image(st.session_state['generated_img_url'], use_column_width=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    
     with col1:
-        if st.button("🔄 不滿意，清除重試"):
-            del st.session_state['generated_img_url']
+        # 使用 CSS class 自定義樣式
+        st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
+        if st.button("DISCARD"):
+            st.session_state['generated_img_url'] = None
+            st.session_state['step'] = 1
             st.rerun()
-    with col2:
-        confirm_btn = st.button("✅ 確認 OK - 製作最終視頻")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Step 4 & 5
-    if confirm_btn:
-        st.markdown("---")
-        progress_box = st.empty()
+    with col2:
+        if st.button("PROCEED TO VIDEO"):
+            st.session_state['step'] = 3
+            st.rerun()
+
+# ================= SCREEN 3: VIDEO RESULT =================
+elif st.session_state['step'] == 3:
+    
+    # 如果還沒有生成視頻，進入 Loading/Processing 狀態
+    if st.session_state['final_video_path'] is None:
+        
+        # 顯示 High Fashion Trivia
+        render_trivia_card()
+        
+        # 進度條 (Visual Only)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        status_text.text("INITIALIZING CREATIVE DIRECTOR AI...")
+        progress_bar.progress(10)
+        time.sleep(1) # Fake delay for UX
         
         try:
-            # A. Veo 3.1
-            with progress_box.container():
-                st.info("正在啟動 Google Veo 3.1 Fast (需時約 1-3 分鐘)...")
-                veo_url = animate_with_veo_fast(st.session_state['generated_img_url'])
-                st.info("Veo 生成完成，正在下載影片...")
-                local_veo = download_file(veo_url, "temp_veo.mp4")
+            # 1. Veo Generation
+            status_text.text("RENDERING CINEMATIC MOTION (Estimated: 2 mins)...")
+            progress_bar.progress(30)
             
+            # 由於 Streamlit 是同步的，這裡會 Block 住，Carousel 無法轉動
+            # 但我們可以呈現一個靜態的高級介面
+            veo_url = animate_with_veo_fast(st.session_state['generated_img_url'])
+            
+            progress_bar.progress(70)
+            status_text.text("DOWNLOADING RAW FOOTAGE...")
+            local_veo = download_file(veo_url, "temp_veo.mp4")
+            
+            # 2. Compositing
             if local_veo:
-                # B. 合成
-                with progress_box.container():
-                    st.info("下載完成，開始進行最終合成...")
-                    final_path = process_final_composite(local_veo)
+                progress_bar.progress(85)
+                status_text.text("COMPOSITING FINAL CUT WITH AUDIO...")
+                final_path = process_final_composite(local_veo)
                 
                 if final_path:
-                    progress_box.empty()
-                    st.success("🎉 視頻製作完成！")
-                    st.video(final_path)
-                    
-                    with open(final_path, "rb") as f:
-                        st.download_button(
-                            label="下載祝賀視頻 (.mp4)",
-                            data=f,
-                            file_name="cny_greeting.mp4",
-                            mime="video/mp4"
-                        )
+                    progress_bar.progress(100)
+                    st.session_state['final_video_path'] = final_path
+                    # 清理暫存
                     os.remove(local_veo)
-                    
+                    st.rerun() # 刷新頁面顯示結果
+                else:
+                    st.error("Compositing Failed.")
+                    time.sleep(2)
+                    st.session_state['step'] = 2
+                    st.rerun()
+            else:
+                 st.error("Video Generation Failed.")
+                 time.sleep(2)
+                 st.session_state['step'] = 2
+                 st.rerun()
+
         except Exception as e:
-            st.error(f"製作失敗: {e}")
+            st.error(f"System Error: {e}")
+
+    # 如果已經有視頻，顯示結果
+    else:
+        st.markdown(f"""
+        <div style="text-align:center; margin-bottom: 1rem;">
+            {ICON_VIDEO}
+            <p style="margin-top:10px; color:#1A1A1A;">YOUR MASTERPIECE</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.video(st.session_state['final_video_path'])
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # 下載按鈕
+        with open(st.session_state['final_video_path'], "rb") as f:
+            st.download_button(
+                label="DOWNLOAD VIDEO",
+                data=f,
+                file_name="LUNAR_2025_ELEGANCE.mp4",
+                mime="video/mp4"
+            )
+            
+        # WhatsApp Share Link (Native)
+        st.markdown("""
+        <a href="https://wa.me/?text=Check%20out%20my%20Lunar%20New%20Year%20AI%20Portrait!%20%23LUNAR2025" target="_blank" style="text-decoration:none;">
+            <button style="width:100%; margin-top:10px; background-color:#25D366; color:white; border:none; padding:12px; text-transform:uppercase; font-family:sans-serif; cursor:pointer;">
+                Share via WhatsApp
+            </button>
+        </a>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        if st.button("CREATE ANOTHER PORTRAIT"):
+            # Reset All
+            st.session_state['step'] = 1
+            st.session_state['generated_img_url'] = None
+            st.session_state['final_video_path'] = None
+            st.rerun()

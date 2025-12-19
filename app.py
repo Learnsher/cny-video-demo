@@ -9,7 +9,6 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip
-# 關鍵修正：必須顯式引入 audio_loop
 from moviepy.audio.fx.all import audio_loop 
 import tempfile
 
@@ -69,10 +68,11 @@ def animate_with_veo_fast(image_url):
     """步驟 4: Veo 3.1 Fast"""
     print(f"DEBUG: Calling {MODEL_VIDEO_GEN}")
     
+    # 【關鍵修正】Duration 必須是 4, 6, 或 8
     input_args = {
         "image": image_url,
         "prompt": "Slow cinematic camera pan, festive atmosphere, glowing lights, 4k resolution, smooth motion",
-        "duration": 3,
+        "duration": 4,          # 改為 4 (因為 API 不接受 3)
         "resolution": "720p",
         "aspect_ratio": "9:16",
         "generate_audio": False 
@@ -97,7 +97,6 @@ def process_final_composite(veo_video_path):
         target_res = (1080, 1920)
         
         def safe_resize(clip):
-            # 確保尺寸正確，使用 resize + crop
             return clip.resize(height=target_res[1]).crop(x_center=clip.w/2, width=target_res[0])
 
         try:
@@ -112,17 +111,15 @@ def process_final_composite(veo_video_path):
         # 拼接影片
         final_clip = concatenate_videoclips([clip_intro, clip_veo, clip_outro], method="compose")
         
-        # 處理音樂 (關鍵修正部分)
+        # 處理音樂
         if os.path.exists("bgm.mp3"):
             bgm = AudioFileClip("bgm.mp3")
             
-            # 修正：使用 audio_loop 函數，而不是 .loop() 方法
             if bgm.duration < final_clip.duration:
                 bgm = audio_loop(bgm, duration=final_clip.duration)
             else:
                 bgm = bgm.subclip(0, final_clip.duration)
             
-            # 調整音量
             bgm = bgm.volumex(0.6)
             final_clip = final_clip.set_audio(bgm)
             
@@ -137,7 +134,6 @@ def process_final_composite(veo_video_path):
             logger=None
         )
         
-        # 釋放資源
         clip_intro.close()
         clip_veo.close()
         clip_outro.close()

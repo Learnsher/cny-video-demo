@@ -14,8 +14,8 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 # --- 1. 頁面設定 ---
-st.set_page_config(page_title="LUMIÈRE - CNY Campaign", page_icon="✨", layout="mobile") 
-# layout="mobile" 是一個隱藏參數，讓畫面在 Desktop 也是窄屏，模擬手機 App 體驗
+# 修正：layout 只能選 "centered" 或 "wide"。我們選 centered 來模擬手機窄屏。
+st.set_page_config(page_title="LUMIÈRE - CNY Campaign", page_icon="✨", layout="centered")
 
 # --- 2. HIGH FASHION CSS (關鍵部分) ---
 st.markdown("""

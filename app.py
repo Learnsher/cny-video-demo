@@ -10,198 +10,170 @@ from moviepy.audio.fx.all import audio_loop
 import tempfile
 import base64
 
-# --- 0. 系統補丁 (System Patch) ---
+# --- 0. 系統補丁 ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-# --- 1. 頁面設定 (Page Config) ---
-st.set_page_config(page_title="LUMIÈRE", page_icon="✨", layout="centered")
+# --- 1. 頁面設定 ---
+st.set_page_config(page_title="LUMIÈRE", page_icon="✨", layout="wide") # 使用 Wide 方便我們用 CSS 控制中間的 Container
 
-# --- 2. THE "CHANEL" CSS INJECTION (魔改核心) ---
-# 這裡我們強行注入 CSS 來覆蓋 Streamlit 的預設樣式
+# --- 2. THE "PIXEL PERFECT" CSS (核心改動) ---
 st.markdown("""
     <style>
-    /* 1. 引入高級字體 (Playfair Display for Headings, Lato for Body) */
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Lato:wght@300;400;700&display=swap');
+    /* ========== 字體引入 ========== */
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&family=Manrope:wght@300;400;600&display=swap');
 
-    /* 2. 全局變數 */
-    :root {
-        --bg-color: #FFFFFF;
-        --text-main: #1D1D1D;
-        --text-sub: #757575;
-        --brand-black: #000000;
-        --brand-gold: #C5A059;
-        --border-color: #E5E5E5;
-    }
-
-    /* 3. 隱藏 Streamlit 預設元素 */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stDeployButton {display:none;}
-    
-    /* 4. 全局樣式重置 */
+    /* ========== 全局重置 (CSS Reset) ========== */
     .stApp {
-        background-color: var(--bg-color);
-        font-family: 'Lato', sans-serif;
-        color: var(--text-main);
+        background-color: #FFFFFF;
+        font-family: 'Manrope', sans-serif;
     }
     
-    /* 5. 標題樣式 (Luxury Vibe) */
-    h1 {
+    /* 移除 Streamlit 預設的頂部和兩側空白 */
+    .main .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 0rem !important;
+        padding-left: 0rem !important;
+        padding-right: 0rem !important;
+        max-width: 480px; /* 強制模擬手機寬度 */
+        margin: 0 auto;   /* 居中 */
+        background-color: #FFFFFF;
+        min-height: 100vh;
+        box-shadow: 0 0 20px rgba(0,0,0,0.05); /* 增加一點陰影讓它像個 App */
+    }
+    
+    /* 隱藏 Header/Footer/Menu */
+    header, footer, #MainMenu {visibility: hidden;}
+    
+    /* ========== UI 元件樣式 ========== */
+    
+    /* 1. 標題區域 (HTML 渲染) */
+    .header-section {
+        text-align: center;
+        margin-bottom: 2rem;
+        padding: 0 20px;
+    }
+    .brand-title {
         font-family: 'Playfair Display', serif;
-        font-weight: 500;
-        font-size: 2.5rem !important;
-        text-align: center;
-        letter-spacing: 2px;
-        color: var(--brand-black);
-        margin-bottom: 0.5rem;
-        margin-top: 1rem;
-    }
-    
-    h2, h3 {
-        font-family: 'Playfair Display', serif;
-        font-weight: 400;
-        text-align: center;
-        color: var(--text-main);
-    }
-
-    p {
-        font-weight: 300;
-        line-height: 1.6;
-        letter-spacing: 0.5px;
-        color: var(--text-sub);
-        text-align: center;
-    }
-
-    /* 6. 按鈕魔改 (鋼琴黑 + 銳角) */
-    .stButton > button {
-        background-color: var(--brand-black) !important;
-        color: white !important;
-        border: 1px solid var(--brand-black) !important;
-        border-radius: 0px !important; /* 銳角 */
-        padding: 16px 32px !important;
-        font-family: 'Lato', sans-serif !important;
-        text-transform: uppercase;
-        font-size: 14px !important;
-        letter-spacing: 2px !important;
-        width: 100%;
-        transition: all 0.3s ease;
-        box-shadow: none !important;
-    }
-    
-    .stButton > button:hover {
-        background-color: white !important;
-        color: var(--brand-black) !important;
-        border: 1px solid var(--brand-black) !important;
-    }
-
-    /* 次級按鈕 (透明背景) */
-    .secondary-button > button {
-        background-color: transparent !important;
-        color: var(--text-sub) !important;
-        border: none !important;
-        text-decoration: underline;
-        text-transform: none;
+        font-size: 36px;
+        color: #000;
+        margin-bottom: 10px;
         letter-spacing: 1px;
     }
+    .sub-title {
+        font-size: 14px;
+        color: #666;
+        line-height: 1.6;
+        font-weight: 300;
+    }
 
-    /* 7. 上傳區塊魔改 */
+    /* 2. 上傳器 (深度魔改) */
     [data-testid='stFileUploader'] {
-        width: 100%;
-        padding: 0;
+        padding: 0 20px;
     }
     [data-testid='stFileUploader'] section {
-        background-color: #FAFAFA;
-        border: 1px solid #E0E0E0;
-        border-radius: 0px;
-        padding: 40px 20px;
+        background-color: #F4F4F4; /* 淺灰底色 */
+        border: none;
+        border-radius: 0;
+        padding: 60px 0; /* 增加高度 */
     }
-    /* 隱藏預設按鈕，只留 Drag & Drop */
-    [data-testid='stFileUploader'] section > button { 
-        display: none;
+    /* 隱藏預設按鈕，只留拖曳區 */
+    [data-testid='stFileUploader'] button {display: none;}
+    
+    /* 3. 按鈕 (Pixel Perfect Alignment) */
+    /* 強制按鈕填滿 Column */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 0px !important;
+        padding: 16px 0 !important;
+        font-family: 'Manrope', sans-serif;
+        font-weight: 500;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        font-size: 14px;
+        border: 1px solid #000;
+        transition: all 0.2s;
     }
     
-    /* 8. 圖片容器 */
-    .img-container {
-        border: 1px solid #F0F0F0;
-        padding: 10px;
-        background: white;
-        margin-bottom: 20px;
+    /* 黑色實心按鈕 (Primary) */
+    .primary-btn div.stButton > button {
+        background-color: #000 !important;
+        color: #FFF !important;
+    }
+    .primary-btn div.stButton > button:hover {
+        background-color: #333 !important;
+    }
+
+    /* 白色空心按鈕 (Secondary) */
+    .secondary-btn div.stButton > button {
+        background-color: #FFF !important;
+        color: #000 !important;
+    }
+    .secondary-btn div.stButton > button:hover {
+        background-color: #F4F4F4 !important;
     }
     
-    /* 9. Loading Bar 魔改 (變金色) */
-    .stProgress > div > div > div > div {
-        background-color: var(--brand-gold);
+    /* 底部按鈕容器 (固定在底部或緊貼內容) */
+    .action-area {
+        padding: 20px;
+        margin-top: 20px;
     }
-    
-    /* 10. Logo 區域 */
-    .logo-area {
+
+    /* 4. 圖片容器 (HTML) */
+    .image-wrapper {
+        width: 100%;
+        aspect-ratio: 9/16;
+        background-color: #EEE;
+        overflow: hidden;
+        position: relative;
+    }
+    .image-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    /* 5. 載入動畫文字 */
+    .loading-text {
         text-align: center;
-        margin-bottom: 40px;
+        margin-top: 20px;
         font-family: 'Playfair Display', serif;
-        font-size: 20px;
-        font-weight: bold;
-        letter-spacing: 5px;
-        border-bottom: 1px solid #EEE;
-        padding-bottom: 20px;
+        font-size: 18px;
+        color: #C5A059;
+    }
+    
+    /* 6. 進度條顏色 */
+    .stProgress > div > div > div > div {
+        background-color: #C5A059;
     }
 
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 語言包 (Copywriting) ---
+# --- 3. 語言包 ---
 TEXT = {
     'TC': {
-        'brand': "LUMIÈRE",
-        'title': "煥發・新春",
-        'subtitle': "以 AI 科技，預見您蛇年的自信光采",
-        'upload_title': "UPLOAD PORTRAIT",
-        'upload_desc': "請上傳清晰正面照片<br><span style='font-size:12px; color:#999'>支援 JPG, PNG, WEBP</span>",
-        'tips': "💡 建議：光線充足，避免遮擋臉部",
-        'generating': "正在構建您的新春形象...",
-        's2_title': "CONFIRM YOUR LOOK",
-        's2_desc': "您的氣質獨一無二。是否以此製作短片？",
-        'btn_retry': "重選照片",
-        'btn_confirm': "確認並製作短片",
-        's3_title': "CREATING VIDEO",
-        's3_desc': "這就像一場護膚療程，需要一點時間 (約3分鐘)...",
+        'brand': "AI 煥發·新春",
+        'sub': "為您準備個人化短片<br>送上溫馨祝福",
+        'upload_hint': "請上傳清晰正面照片",
+        'tips': "✓ 清晰樣貌   ✕ 帶口罩   ✕ 多人合照",
+        's2_title': "您的新年形象真美！",
+        's2_sub': "用此繼續生成祝賀短片？",
+        'btn_retry': "重新開始",
+        'btn_confirm': "生成短片",
+        's3_title': "短片生成中...",
+        's3_sub': "約需時3分鐘，請稍等",
         'trivia': ["🧧 正月買褲(富)，全年富足", "✨ 保持心情愉悅，運氣自然來", "💧 新春護膚重點：保濕與光澤"],
-        's4_title': "YOUR MOMENT",
-        's4_desc': "您的專屬祝福已準備好",
-        'btn_share': "分享至 WhatsApp",
-        'btn_download': "下載影片",
+        's4_title': "祝賀短片準備好啦！",
+        's4_sub': "立即分享給親友",
+        'btn_share': "分享祝福短片",
+        'btn_dl': "下載珍藏",
         'btn_home': "返回首頁"
-    },
-    'EN': {
-        'brand': "LUMIÈRE",
-        'title': "RADIANT YEAR",
-        'subtitle': "Visualize your radiance this Year of the Snake",
-        'upload_title': "UPLOAD PORTRAIT",
-        'upload_desc': "Upload a clear front-facing photo<br><span style='font-size:12px; color:#999'>Supports JPG, PNG, WEBP</span>",
-        'tips': "💡 Tip: Use well-lit photos for best results",
-        'generating': "Sculpting your festive look...",
-        's2_title': "CONFIRM LOOK",
-        's2_desc': "Does this capture your aura?",
-        'btn_retry': "RETAKE",
-        'btn_confirm': "GENERATE VIDEO",
-        's3_title': "CREATING VIDEO",
-        's3_desc': "Like a beauty ritual, this takes a moment (approx 3 mins)...",
-        'trivia': ["🧧 New trousers bring wealth", "✨ Joy brings luck", "💧 Hydration is key"],
-        's4_title': "YOUR MOMENT",
-        's4_desc': "Your exclusive video is ready",
-        'btn_share': "SHARE ON WHATSAPP",
-        'btn_download': "DOWNLOAD VIDEO",
-        'btn_home': "RETURN HOME"
     }
 }
+t = TEXT['TC'] # 簡化 Demo，暫用單一語言，可自行擴充
 
-# --- 4. 狀態管理 ---
-if 'step' not in st.session_state: st.session_state.step = 1
-if 'lang' not in st.session_state: st.session_state.lang = 'TC'
-t = TEXT[st.session_state.lang]
-
-# --- 5. 後端函數 (Backend Logic) ---
+# --- 4. 後端函數 ---
 if 'REPLICATE_API_TOKEN' in st.secrets:
     os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
 
@@ -259,95 +231,134 @@ def process_composite(veo_path):
         return tfile.name
     except: return None
 
-# --- 6. UI 構建 (UI Construction) ---
+# --- 5. 狀態管理 ---
+if 'step' not in st.session_state: st.session_state.step = 1
 
-# Top Navigation (Logo + Lang)
-c1, c2 = st.columns([8, 2])
-with c1:
-    st.markdown(f"<div class='logo-area'>{t['brand']}</div>", unsafe_allow_html=True)
-with c2:
-    if st.button("EN/繁", key="lang_switch"):
-        st.session_state.lang = 'EN' if st.session_state.lang == 'TC' else 'TC'
-        st.rerun()
+# --- 6. 頁面渲染 (HTML-First Approach) ---
 
-# --- SCREEN 1: LANDING & UPLOAD ---
+# ====== SCREEN 1: UPLOAD ======
 if st.session_state.step == 1:
-    st.markdown(f"<h1>{t['title']}</h1>", unsafe_allow_html=True)
-    st.markdown(f"<p>{t['subtitle']}</p>", unsafe_allow_html=True)
     
-    st.markdown("---")
+    # 1. 頂部標題 (HTML)
+    st.markdown(f"""
+        <div class="header-section" style="padding-top: 40px;">
+            <div class="brand-title">{t['brand']}</div>
+            <div class="sub-title">{t['sub']}</div>
+        </div>
+    """, unsafe_allow_html=True)
     
-    st.markdown(f"<div style='text-align:center; margin-bottom:10px; font-weight:bold; letter-spacing:1px;'>{t['upload_title']}</div>", unsafe_allow_html=True)
-    
-    # Uploader
+    # 2. 上傳器 (Streamlit Widget - CSS 已隱藏按鈕，變成灰色區塊)
+    # 為了模擬 HTML 結構，我們直接放 Widget，CSS 會負責排版
     uploaded_file = st.file_uploader("", type=['jpg', 'png', 'jpeg'])
-    st.markdown(f"<p style='font-size:13px; margin-top:-20px;'>{t['upload_desc']}</p>", unsafe_allow_html=True)
     
-    st.markdown(f"<div style='background:#F9F9F9; padding:10px; text-align:center; font-size:12px; margin-top:20px; color:#888;'>{t['tips']}</div>", unsafe_allow_html=True)
+    # 3. 提示文字 (HTML)
+    st.markdown(f"""
+        <div style="text-align: center; margin-top: 15px;">
+            <div style="font-weight: 500; font-size: 14px;">{t['upload_hint']}</div>
+            <div style="color: #999; font-size: 12px; margin-top: 5px;">{t['tips']}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 4. 底部裝飾 (模擬 Wireframe 的圓圈 Step)
+    st.markdown("""
+        <div style="display: flex; justify-content: center; margin-top: 50px; opacity: 0.5;">
+             <span style="margin: 0 10px; font-size: 12px;">● 上傳</span>
+             <span style="margin: 0 10px; font-size: 12px;">○ 預覽</span>
+             <span style="margin: 0 10px; font-size: 12px;">○ 生成</span>
+        </div>
+    """, unsafe_allow_html=True)
 
+    # Logic
     if uploaded_file:
-        st.write("")
-        if st.button("START EXPERIENCE"): # 統一用英文 Button 增加高級感
-            with st.spinner(t['generating']):
-                try:
-                    url = generate_image_api(uploaded_file)
-                    st.session_state['generated_img_url'] = url
-                    st.session_state.step = 2
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
+        # 當偵測到檔案時，自動觸發生成 (模擬流暢體驗)
+        # 這裡我們不放 Button，直接跳轉，讓 UX 更順
+        with st.spinner("Processing..."):
+            try:
+                url = generate_image_api(uploaded_file)
+                st.session_state['generated_img_url'] = url
+                st.session_state.step = 2
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
 
-# --- SCREEN 2: PREVIEW ---
+# ====== SCREEN 2: PREVIEW ======
 elif st.session_state.step == 2:
-    st.markdown(f"<h3>{t['s2_title']}</h3>", unsafe_allow_html=True)
-    st.markdown(f"<p>{t['s2_desc']}</p>", unsafe_allow_html=True)
     
+    # 標題
+    st.markdown(f"""
+        <div class="header-section" style="padding-top: 20px;">
+            <div style="font-family: 'Playfair Display'; font-size: 24px; margin-bottom: 5px;">{t['s2_title']}</div>
+            <div class="sub-title">{t['s2_sub']}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 圖片預覽 (HTML 容器，確保 9:16)
     if 'generated_img_url' in st.session_state:
         st.markdown(f"""
-        <div class="img-container">
-            <img src="{st.session_state['generated_img_url']}" style="width:100%; display:block;">
-        </div>
+            <div style="padding: 0 20px;">
+                <div class="image-wrapper">
+                    <img src="{st.session_state['generated_img_url']}">
+                </div>
+            </div>
         """, unsafe_allow_html=True)
+
+    # 底部按鈕區 (使用 Columns + CSS Class 實現對齊)
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True) # Spacer
     
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 1], gap="small")
+    
     with col1:
-        # 使用 CSS class secondary-button
-        st.markdown('<div class="secondary-button">', unsafe_allow_html=True)
+        # 左邊：白色按鈕 (Secondary)
+        st.markdown('<div class="secondary-btn">', unsafe_allow_html=True)
         if st.button(t['btn_retry']):
             st.session_state.step = 1
             del st.session_state['generated_img_url']
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
+        
     with col2:
+        # 右邊：黑色按鈕 (Primary)
+        st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
         if st.button(t['btn_confirm']):
             st.session_state.step = 3
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# --- SCREEN 3: LOADING ---
+# ====== SCREEN 3: LOADING ======
 elif st.session_state.step == 3:
-    st.markdown(f"<h3>{t['s3_title']}</h3>", unsafe_allow_html=True)
-    st.markdown(f"<p>{t['s3_desc']}</p>", unsafe_allow_html=True)
     
-    # 模擬進度條
+    st.markdown(f"""
+        <div style="text-align: center; padding-top: 100px;">
+            <div style="font-family: 'Playfair Display'; font-size: 24px; margin-bottom: 10px;">{t['s3_title']}</div>
+            <div style="color: #666; font-size: 14px;">{t['s3_sub']}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 自定義 Toggle 樣式 UI (純展示)
+    st.markdown("""
+        <div style="display: flex; justify-content: center; align-items: center; margin-top: 30px; background: #FAFAFA; padding: 10px; margin-left: 40px; margin-right: 40px;">
+            <span style="font-size: 14px; margin-right: 10px;">完成時通知我</span>
+            <div style="width: 40px; height: 20px; background: #DDD; border-radius: 10px; position: relative;">
+                <div style="width: 18px; height: 18px; background: #FFF; border-radius: 50%; position: absolute; top: 1px; left: 1px;"></div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+
+    # Progress Logic
     progress_bar = st.progress(0)
-    status_text = st.empty()
+    trivia_placeholder = st.empty()
     
-    # Trivia Carousel
-    trivia_box = st.empty()
-    
-    # Simulation Loop
     for i in range(1, 101):
         progress_bar.progress(i)
-        
-        # 每 20% 換一次 Trivia
-        if i % 20 == 0:
+        if i % 25 == 0:
             trivia = random.choice(t['trivia'])
-            trivia_box.markdown(f"<div style='text-align:center; padding:20px; color:#C5A059; font-style:italic;'>{trivia}</div>", unsafe_allow_html=True)
-        
-        time.sleep(0.05) # 模擬時間
-        
+            trivia_placeholder.markdown(f"<div class='loading-text'>{trivia}</div>", unsafe_allow_html=True)
+        time.sleep(0.04) # 3-4秒動畫
+    
+    # Execute API
     try:
-        # Real API Call
         if 'generated_img_url' in st.session_state:
             veo_url = generate_video_api(st.session_state['generated_img_url'])
             local_veo = download_file(veo_url, "temp_veo.mp4")
@@ -358,30 +369,56 @@ elif st.session_state.step == 3:
                     st.session_state.step = 4
                     st.rerun()
     except Exception as e:
-        st.error("Error: " + str(e))
-        if st.button("BACK"):
+        st.error(str(e))
+        if st.button("Back"):
             st.session_state.step = 1
             st.rerun()
 
-# --- SCREEN 4: RESULT ---
+# ====== SCREEN 4: RESULT ======
 elif st.session_state.step == 4:
-    st.markdown(f"<h3>{t['s4_title']}</h3>", unsafe_allow_html=True)
-    st.markdown(f"<p>{t['s4_desc']}</p>", unsafe_allow_html=True)
     
+    st.markdown(f"""
+        <div class="header-section" style="padding-top: 20px;">
+            <div style="font-family: 'Playfair Display'; font-size: 24px; margin-bottom: 5px;">{t['s4_title']}</div>
+            <div class="sub-title">{t['s4_sub']}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Video 容器
     if 'final_video_path' in st.session_state:
-        st.video(st.session_state['final_video_path'])
+        # 使用 HTML Video Tag 確保無邊框
+        # 注意：Streamlit 有時無法直接讀取 local mp4 進入 HTML tag，所以我們用 base64 encode
+        video_file = open(st.session_state['final_video_path'], 'rb')
+        video_bytes = video_file.read()
+        video_b64 = base64.b64encode(video_bytes).decode()
+        
+        st.markdown(f"""
+            <div style="padding: 0 20px;">
+                <div class="image-wrapper">
+                    <video autoplay muted controls loop style="width: 100%; height: 100%; object-fit: cover;">
+                        <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+                    </video>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Action Buttons
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
     
-    st.write("")
+    # 黑色按鈕 (Share)
+    st.markdown('<div class="primary-btn" style="padding: 0 20px;">', unsafe_allow_html=True)
+    st.link_button(t['btn_share'], "https://wa.me/?text=My%20CNY%20Video!")
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    # Share (WhatsApp Link)
-    st.link_button(t['btn_share'], "https://wa.me/?text=Check%20out%20my%20Luxury%20CNY%20Video!%20✨")
-    
-    # Download
+    # 黑色按鈕 (Download) - 需要用 st.download_button 但我們要用 CSS 偽裝它
+    st.markdown('<div class="primary-btn" style="padding: 10px 20px 0 20px;">', unsafe_allow_html=True)
     with open(st.session_state['final_video_path'], "rb") as f:
-        st.download_button(t['btn_download'], data=f, file_name="Lumiere_CNY.mp4", mime="video/mp4")
+        st.download_button(t['btn_dl'], data=f, file_name="CNY_Video.mp4", mime="video/mp4")
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    st.write("")
-    st.markdown('<div class="secondary-button">', unsafe_allow_html=True)
+    # 底部返回
+    st.markdown('<div style="height: 20px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="secondary-btn" style="padding: 0 20px;">', unsafe_allow_html=True)
     if st.button(t['btn_home']):
         st.session_state.step = 1
         st.rerun()

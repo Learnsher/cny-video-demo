@@ -2,6 +2,14 @@ import streamlit as st
 import replicate
 import os
 import requests
+import PIL.Image  # 新增這一行
+
+# --- 修正 Pillow 10+ 的 ANTIALIAS 錯誤 ---
+# 這段必須放在 from moviepy... 之前
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+# ---------------------------------------
+
 from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip
 import tempfile
 

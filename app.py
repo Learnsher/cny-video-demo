@@ -2,21 +2,21 @@ import streamlit as st
 import replicate
 import os
 import requests
-import PIL.Image  # 新增這一行
+import PIL.Image  # 必須引入
 
-# --- 修正 Pillow 10+ 的 ANTIALIAS 錯誤 ---
-# 這段必須放在 from moviepy... 之前
+# --- 1. 系統補丁 (修正 PIL 和 MoviePy 的兼容性問題) ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-# ---------------------------------------
 
 from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip
+# 關鍵修正：必須顯式引入 audio_loop
+from moviepy.audio.fx.all import audio_loop 
 import tempfile
 
 # --- 頁面設定 ---
 st.set_page_config(page_title="CNY Video Gen Ultimate", page_icon="🧧")
 
-# --- 1. 安全驗證 ---
+# --- 2. 安全驗證 ---
 if 'REPLICATE_API_TOKEN' in st.secrets:
     os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
 else:
@@ -41,17 +41,15 @@ def download_file(url, local_filename):
         return None
 
 def generate_cny_image_strict(uploaded_file, prompt):
-    """步驟 2: Nano Banana Pro (使用 image_input 列表)"""
-    
+    """步驟 2: Nano Banana Pro (Strict Mode)"""
     uploaded_file.seek(0)
     final_prompt = f"{prompt}, festive chinese new year atmosphere, cinematic lighting, photorealistic, 8k"
     
     print(f"DEBUG: Calling {MODEL_IMG_GEN}")
 
-    # 根據 Nano Banana Pro API: image_input 必須是 list
     input_args = {
         "prompt": final_prompt,
-        "image_input": [uploaded_file], 
+        "image_input": [uploaded_file],  # 必須是 List
         "resolution": "2K",
         "aspect_ratio": "9:16",
         "output_format": "png",
@@ -60,7 +58,6 @@ def generate_cny_image_strict(uploaded_file, prompt):
     
     output = replicate.run(MODEL_IMG_GEN, input=input_args)
     
-    # 取得圖片 URL
     if hasattr(output, 'url'):
         return output.url
     elif isinstance(output, list):
@@ -69,22 +66,19 @@ def generate_cny_image_strict(uploaded_file, prompt):
         return str(output)
 
 def animate_with_veo_fast(image_url):
-    """步驟 4: Veo 3.1 Fast (根據你的 Python Example)"""
-    
+    """步驟 4: Veo 3.1 Fast"""
     print(f"DEBUG: Calling {MODEL_VIDEO_GEN}")
     
-    # 根據 Veo 3.1 API Example
     input_args = {
-        "image": image_url, # 這裡接受 URL 字串
+        "image": image_url,
         "prompt": "Slow cinematic camera pan, festive atmosphere, glowing lights, 4k resolution, smooth motion",
-        "duration": 4,          # 你的需求：3秒
-        "resolution": "720p",   # 建議 720p 以加快速度，或改 "1080p"
-        "aspect_ratio": "9:16", # 你的需求：直式
-        "generate_audio": False # 關閉 AI 音效，因為我們要用 bgm.mp3
+        "duration": 3,
+        "resolution": "720p",
+        "aspect_ratio": "9:16",
+        "generate_audio": False 
     }
     
     output = replicate.run(MODEL_VIDEO_GEN, input=input_args)
-    
     return str(output)
 
 def process_final_composite(veo_video_path):
@@ -99,10 +93,11 @@ def process_final_composite(veo_video_path):
         clip_veo = VideoFileClip(veo_video_path)
         clip_outro = VideoFileClip("outro.mp4")
         
-        # 強制統一尺寸 (9:16 - 1080x1920)
+        # 統一尺寸 (9:16 - 1080x1920)
         target_res = (1080, 1920)
         
         def safe_resize(clip):
+            # 確保尺寸正確，使用 resize + crop
             return clip.resize(height=target_res[1]).crop(x_center=clip.w/2, width=target_res[0])
 
         try:
@@ -110,24 +105,28 @@ def process_final_composite(veo_video_path):
             clip_veo = safe_resize(clip_veo)
             clip_outro = safe_resize(clip_outro)
         except Exception:
-            # Fallback if crop fails
             clip_intro = clip_intro.resize(newsize=target_res)
             clip_veo = clip_veo.resize(newsize=target_res)
             clip_outro = clip_outro.resize(newsize=target_res)
 
+        # 拼接影片
         final_clip = concatenate_videoclips([clip_intro, clip_veo, clip_outro], method="compose")
         
+        # 處理音樂 (關鍵修正部分)
         if os.path.exists("bgm.mp3"):
             bgm = AudioFileClip("bgm.mp3")
+            
+            # 修正：使用 audio_loop 函數，而不是 .loop() 方法
             if bgm.duration < final_clip.duration:
-                bgm = bgm.loop(duration=final_clip.duration)
+                bgm = audio_loop(bgm, duration=final_clip.duration)
             else:
                 bgm = bgm.subclip(0, final_clip.duration)
             
+            # 調整音量
             bgm = bgm.volumex(0.6)
-            # 因為我們關閉了 Veo 的音效，所以直接使用 BGM
             final_clip = final_clip.set_audio(bgm)
             
+        # 輸出
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
         final_clip.write_videofile(
             tfile.name, 
@@ -138,6 +137,7 @@ def process_final_composite(veo_video_path):
             logger=None
         )
         
+        # 釋放資源
         clip_intro.close()
         clip_veo.close()
         clip_outro.close()
@@ -162,7 +162,7 @@ if uploaded_file:
     default_prompt = "A festive Chinese New Year portrait, traditional elegant red and gold clothing, joyful expression, holding a red envelope"
     user_prompt = st.text_area("提示詞 (Prompt)", default_prompt, height=100)
 
-    # 步驟 2
+    # Step 2
     if st.button("2. 生成賀圖預覽 (Nano Banana Pro)"):
         with st.spinner("正在生成圖片..."):
             try:
@@ -172,7 +172,7 @@ if uploaded_file:
             except Exception as e:
                 st.error(f"生成圖片失敗: {e}")
 
-# 步驟 3
+# Step 3
 if 'generated_img_url' in st.session_state:
     st.markdown("---")
     st.subheader("3. 請確認生成結果")
@@ -186,7 +186,7 @@ if 'generated_img_url' in st.session_state:
     with col2:
         confirm_btn = st.button("✅ 確認 OK - 製作最終視頻")
 
-    # 步驟 4 & 5
+    # Step 4 & 5
     if confirm_btn:
         st.markdown("---")
         progress_box = st.empty()
